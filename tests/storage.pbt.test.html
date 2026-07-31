@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<!--
+  Property-Based Tests: Storage serialization round-trip
+  Feature: todo-life-dashboard
+
+  Property 11: Dashboard_State serialization round-trip
+  Property 12: Persistence restores full state on load
+
+  Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.7
+
+  Open this file in a browser to run. Results appear in the console and on screen.
+  fast-check is loaded from CDN (requires internet connection).
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PBT: Storage serialization round-trip</title>
+  <style>
+    body { font-family: monospace; padding: 1rem 2rem; background: #1a1a2e; color: #e0e0e0; }
+    h1 { color: #a6e3a1; }
+    .pass { color: #a6e3a1; }
+    .fail { color: #f38ba8; }
+    .info { color: #89b4fa; }
+    pre { background: #0d0d1a; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+    #summary { font-size: 1.2em; margin-top: 1.5rem; padding: 1rem; border-radius: 6px; }
+    #summary.all-pass { background: #1e3a1e; border: 1px solid #a6e3a1; }
+    #summary.has-fail { background: #3a1e1e; border: 1px solid #f38ba8; }
+  </style>
+</head>
+<body>
+  <h1>PBT: Storage &mdash; Serialization Round-Trip (Properties 11 &amp; 12)</h1>
+  <p class="info">Open the browser console for detailed output. Tests run automatically on page load.</p>
+  <pre id="output">Running...</pre>
+  <div id="summary"></div>
+
+  <!-- fast-check loaded from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/fast-check@3/lib/bundle/fast-check.min.js"></script>
+
+  <script>
+    'use strict';
+
+    // ── Minimal localStorage shim for isolated testing ─────────────────────
+    // Provides an in-memory localStorage-compatible object so tests run
+    // without polluting the real browser storage.
+    function makeLocalStorageShim() {
+      const store = Object.create(null);
+      return {
+        getItem(key)        { return key in store ? store[key] : null; },
+        setItem(key, value) { store[key] = String(value); },
+        removeItem(key)     { delete store[key]; },
+        clear()             { for (const k of Object.keys(store)) delete store[k]; }
+      };
+    }
+
+    // ── Storage module (extracted from app.js for isolated testing) ─────────
+    // This is a self-contained copy of Storage that accepts an injected
+    // localStorage shim so tests remain fully isolated.
+    function makeStorage(lsShim) {
+      return {
+        KEY: 'dashboardState',
+
+        load() {
+          const defaults = {
+            tasks: [],
+            timer: { workDuration: 25, breakDuration: 5 },
+            links: []
+          };
+
+          let raw;
+          try {
+            raw = lsShim.getItem(this.KEY);
+          } catch (err) {
+            return defaults;
+          }
+
+          if (raw === null) return defaults;
+
+          let parsed;
+          try {
+            parsed = JSON.parse(raw);
+          } catch (err) {
+            return defaults;
+          }
+
+          const result = {
+            tasks: defaults.tasks,
+            timer: { ...defaults.timer },
+            links: defaults.links
+          };
+
+          if (Array.isArray(parsed.tasks)) {
+            result.tasks = parsed.tasks;
+          }
+
+          if (parsed.timer !== null && typeof parsed.timer === 'object') {
+            const { workDuration, breakDuration } = parsed.timer;
+            if (typeof workDuration === 'number' && Number.isFinite(workDuration)) {
+              result.timer.workDuration = workDuration;
+            }
+            if (typeof breakDuration === 'number' && Number.isFinite(breakDuration)) {
+              result.timer.breakDuration = breakDuration;
+            }
+          }
+
+          if (Array.isArray(parsed.links)) {
+            result.links = parsed.links;
+          }
+
+          return result;
+        },
+
+        /**
+         * Synchronous save (no debounce) for testing purposes.
+         * In production app.js, save() is debounced 500ms.
+         */
+        saveSync(state) {
+          const persisted = {
+            tasks: state.tasks,
+            timer: {
+              workDuration:  state.timer.workDuration,
+              breakDuration: state.timer.breakDuration
+            },
+            links: state.links
+          };
+          lsShim.setItem(this.KEY, JSON.stringify(persisted));
+        }
+      };
+    }
+
+    // ── Deep equality helper ─────────────────────────────────────────────────
+    function deepEqual(a, b) {
+      if (a === b) return true;
+      if (a === null || b === null) return a === b;
+      if (typeof a !== typeof b) return false;
+      if (Array.isArray(a)) {
+        if (!Array.isArray(b) || a.length !== b.length) return false;
+        for (let i = 0; i < a.length; i++) {
+          if (!deepEqual(a[i], b[i])) return false;
+        }
+        return true;
+      }
+      if (typeof a === 'object') {
+        const keysA = Object.keys(a).sort();
+        const keysB = Object.keys(b).sort();
+        if (!deepEqual(keysA, keysB)) return false;
+        for (const k of keysA) {
+          if (!deepEqual(a[k], b[k])) return false;
+        }
+        return true;
+      }
+      return false;
+    }
+
+    // ── Arbitraries (generators) ─────────────────────────────────────────────
+    const fc = window.fc; // fast-check global from CDN bundle
+
+    // Task arbitrary: id, text (1-200 non-whitespace-only), completed, createdAt
+    const taskArb = fc.record({
+      id:        fc.uuidV(4),
+      text:      fc.string({ minLength: 1, maxLength: 200 }).filter(s => s.trim().length > 0),
+      completed: fc.boolean(),
+      createdAt: fc.integer({ min: 0, max: 2_000_000_000_000 })
+    });
+
+    // TimerConfig arbitrary: workDuration and breakDuration in [1, 60]
+    const timerConfigArb = fc.record({
+      workDuration:  fc.integer({ min: 1, max: 60 }),
+      breakDuration: fc.integer({ min: 1, max: 60 })
+    });
+
+    // QuickLink arbitrary
+    const quickLinkArb = fc.record({
+      id:    fc.uuidV(4),
+      label: fc.string({ minLength: 1, maxLength: 50 }),
+      url:   fc.oneof(
+        fc.constant('http://example.com'),
+        fc.constant('https://example.com'),
+        fc.webUrl()
+      )
+    });
+
+    // DashboardState arbitrary (only persisted fields: tasks, timer config, links)
+    const dashboardStateArb = fc.record({
+      tasks: fc.array(taskArb, { minLength: 0, maxLength: 10 }),
+      timer: timerConfigArb,
+      links: fc.array(quickLinkArb, { minLength: 0, maxLength: 20 })
+    });
+
+    // ── Test harness ─────────────────────────────────────────────────────────
+    let passed = 0;
+    let failed = 0;
+    const lines = [];
+
+    function log(line, cls = '') {
+      lines.push({ text: line, cls });
+      console.log(line);
+    }
+
+    async function runProperty(name, fn) {
+      try {
+        await fn();
+        log(`  PASS  ${name}`, 'pass');
+        passed++;
+      } catch (err) {
+        log(`  FAIL  ${name}`, 'fail');
+        log(`        ${err.message}`, 'fail');
+        if (err.counterexample) {
+          log(`        Counterexample: ${JSON.stringify(err.counterexample)}`, 'fail');
+        }
+        failed++;
+      }
+    }
+
+    // ── Property 11: Dashboard_State serialization round-trip ────────────────
+    // Feature: todo-life-dashboard, Property 11
+    // For any valid DashboardState, JSON.parse(JSON.stringify(state)) produces
+    // a structurally equal object.
+    // Validates: Requirements 5.1, 5.2, 5.3, 5.7
+    async function prop11() {
+      // Feature: todo-life-dashboard, Property 11
+      await fc.assert(
+        fc.property(dashboardStateArb, (state) => {
+          const serialized   = JSON.stringify(state);
+          const deserialized = JSON.parse(serialized);
+          return deepEqual(state, deserialized);
+        }),
+        { numRuns: 100, verbose: true }
+      );
+    }
+
+    // ── Property 12: Persistence restores full state on load ─────────────────
+    // Feature: todo-life-dashboard, Property 12
+    // Storage.load() after Storage.saveSync(state) returns deeply equal state
+    // (tasks, timer config, links).
+    // Validates: Requirements 5.4
+    async function prop12() {
+      // Feature: todo-life-dashboard, Property 12
+      await fc.assert(
+        fc.property(dashboardStateArb, (state) => {
+          const lsShim  = makeLocalStorageShim();
+          const storage = makeStorage(lsShim);
+
+          // Persist the state synchronously
+          storage.saveSync(state);
+
+          // Reload from the same shim
+          const loaded = storage.load();
+
+          // The loaded state must be deeply equal to the persisted portion:
+          // tasks, timer config (workDuration, breakDuration), and links.
+          const tasksOk = deepEqual(loaded.tasks, state.tasks);
+          const timerOk =
+            loaded.timer.workDuration  === state.timer.workDuration &&
+            loaded.timer.breakDuration === state.timer.breakDuration;
+          const linksOk = deepEqual(loaded.links, state.links);
+
+          return tasksOk && timerOk && linksOk;
+        }),
+        { numRuns: 100, verbose: false }
+      );
+    }
+
+    // ── Run all tests ────────────────────────────────────────────────────────
+    async function runAll() {
+      log('');
+      log('Property 11: Dashboard_State serialization round-trip', 'info');
+      log('  // Feature: todo-life-dashboard, Property 11', 'info');
+      log('  // Validates: Requirements 5.1, 5.2, 5.3, 5.7', 'info');
+      await runProperty('JSON round-trip preserves all DashboardState fields (100 iterations)', prop11);
+
+      log('');
+      log('Property 12: Persistence restores full state on load', 'info');
+      log('  // Feature: todo-life-dashboard, Property 12', 'info');
+      log('  // Validates: Requirements 5.4', 'info');
+      await runProperty('Storage.load() after Storage.save(state) returns deeply equal state (100 iterations)', prop12);
+
+      log('');
+      log(`Results: ${passed} passed, ${failed} failed`);
+
+      // Render to page
+      const pre = document.getElementById('output');
+      pre.innerHTML = lines
+        .map(l => `<span class="${l.cls || ''}">${escapeHtml(l.text)}</span>`)
+        .join('\n');
+
+      const summary = document.getElementById('summary');
+      summary.className = failed === 0 ? 'all-pass' : 'has-fail';
+      summary.textContent = `Results: ${passed} passed, ${failed} failed`;
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // Wait for fast-check CDN script to load, then run
+    window.addEventListener('load', () => {
+      if (!window.fc) {
+        document.getElementById('output').textContent =
+          'ERROR: fast-check failed to load from CDN. Check your internet connection.';
+        return;
+      }
+      runAll().catch(err => {
+        console.error('Unexpected error running tests:', err);
+        document.getElementById('output').textContent =
+          'ERROR: ' + (err && err.message ? err.message : String(err));
+      });
+    });
+  </script>
+</body>
+</html>

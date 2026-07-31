@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>To-Do Life Dashboard</title>
+    <link rel="stylesheet" href="css/styles.css" />
+    <script src="js/app.js" defer></script>
+  </head>
+  <body class="bodystyle">
+    <!-- Persistent notification banner for localStorage errors and other alerts -->
+    <div id="notification-banner" role="status" aria-live="polite" aria-atomic="true"></div>
+
+    <!-- Visually hidden live region for screen reader announcements -->
+    <div
+      id="aria-announcer"
+      aria-live="polite"
+      aria-atomic="true"
+      class="visually-hidden"
+    >
+    </div>
+
+    <header>
+      <h1 class="textchange1">To-Do Life Dashboard</h1>
+    </header>
+
+    <main id="dashboard-grid">
+    <!-- Greeting Widget with Clock (REQUIRED FEATURE) -->
+    <section id="greeting-widget" aria-label="Greeting and clock" class="widget">
+      <div id="greeting-container">
+        <h2 id="greeting-message" class="greeting-text">Good morning</h2>
+        <div id="greeting-name-row">
+          <span id="greeting-name-display" class="greeting-name">Guest</span>
+          <button id="greeting-name-edit" type="button" aria-label="Edit your name" class="btn-icon">✏️</button>
+        </div>
+      </div>
+      <div id="greeting-time-date">
+        <time id="clock-time" aria-label="Current time" class="clock-time">--:--:--</time>
+        <p id="clock-date" aria-label="Current date" class="clock-date"></p>
+      </div>
+    </section>
+    </br>
+    </br>
+      <!-- To-Do List Widget -->
+      <section id="todo-widget" aria-label="To-do list">
+        <h2 class="todo-style">To-Do List</h2>
+
+        <!-- Add task form -->
+        <form id="todo-form" novalidate>
+          <h3><label for="todo-input" class="titlebold">New task</label></h3>
+          <input
+            type="text"
+            id="todo-input"
+            name="todo-input"
+            placeholder="What needs to be done?"
+            maxlength="200"
+            autocomplete="off"
+            aria-describedby="todo-error"
+          />
+          <button type="submit" aria-label="Add task" class="button1"><h3>Add</h3></button>
+          <!-- Inline validation message; role="alert" triggers immediate announcement -->
+          <p id="todo-error" role="alert" aria-live="assertive" aria-atomic="true"></p>
+        </form>
+
+        <!-- Incomplete task count; aria-live announces updates to screen readers -->
+        <p id="todo-count" aria-live="polite" aria-atomic="true" class="textbold"></p>
+
+        <!-- Empty-state message shown when task list is empty -->
+        <p id="todo-empty" class="emptytext">No tasks yet. Add one above!</p>
+
+        <!-- Task list -->
+        <ul id="todo-list" aria-label="Task list"></ul>
+
+        <!-- Clear completed control; hidden when task list is empty, disabled when no completed tasks -->
+        <button
+          id="clear-completed"
+          type="button"
+          aria-label="Clear all completed tasks"
+        >
+          Clear Completed
+        </button>
+      </section>
+    </br>
+    </br>
+      <!-- Focus Timer Widget -->
+      <section id="timer-widget" class="sectionstyle" aria-label="Focus timer">
+        <h2 class="todo-style">Focus Timer</h2>
+
+        <!-- Current session label (Work / Break) -->
+        <p id="timer-session">Work</p>
+
+        <!-- MM:SS countdown — announced to screen readers on each update -->
+        <p id="timer-display" aria-live="polite">25:00</p>
+
+        <!-- Timer controls -->
+        <div class="timer-controls">
+          <button id="timer-start"  class="button2" type="button" aria-label="Start timer">Start</button>
+          <button id="timer-pause"  class="button2" type="button" aria-label="Pause timer"  disabled>Pause</button>
+          <button id="timer-reset"  class="button2" type="button" aria-label="Reset timer">Reset</button>
+        </div>
+
+        <!-- Work duration input -->
+        <div class="timer-duration-group">
+          <label for="timer-work-duration" class="textbold2">Work Duration (minutes)</label>
+          <input
+            id="timer-work-duration"
+            type="number"
+            min="1"
+            max="60"
+            value="25"
+            class="durationstyle"
+            aria-describedby="timer-work-error"
+          />
+          <p id="timer-work-error" role="alert" class="input-error"></p>
+        </div>
+
+        <!-- Break duration input -->
+        <div class="timer-duration-group">
+          <label for="timer-break-duration" class="textbold2">Break Duration (minutes)</label>
+          <input
+            id="timer-break-duration"
+            type="number"
+            min="1"
+            max="60"
+            value="5"
+            class="durationstyle"
+            aria-describedby="timer-break-error"
+          />
+          <p id="timer-break-error" role="alert" class="input-error"></p>
+        </div>
+      </section>
+    </br>
+    </br>
+      <!-- Quick Links Widget -->
+      <section id="links-widget" class="sectionstyle2" aria-label="Quick links">
+        <h2 class="todo-style">Quick Links</h2>
+
+        <form id="links-form" novalidate aria-label="Add quick link">
+          <div class="form-group">
+            <label for="links-label-input" class="titlebold">Label</label>
+            <input
+              type="text"
+              id="links-label-input"
+              name="label"
+              maxlength="50"
+              autocomplete="off"
+              placeholder="e.g. GitHub"
+              aria-required="true"
+              class="linkinputstyle"
+            />
+          </div>
+          <div class="form-group">
+            <label for="links-url-input" class="titlebold">URL</label>
+            <input
+              type="url"
+              id="links-url-input"
+              name="url"
+              autocomplete="off"
+              placeholder="https://example.com"
+              aria-required="true"
+              class="linkinputstyle"
+            />
+          </div>
+          <button type="submit" class="addlinkbutton">Add Link</button>
+          <p id="links-error" role="alert" aria-live="assertive" class="error-message"></p>
+        </form>
+
+        <p id="links-empty" class="empty-state">
+          <div class="emptytext">No quick links yet. Add one above.</div></p>
+        <ul id="links-list" aria-label="Quick links list"></ul>
+      </section>
+    </main>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
